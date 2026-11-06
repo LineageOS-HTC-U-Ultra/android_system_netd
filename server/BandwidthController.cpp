@@ -51,6 +51,8 @@
 
 #include <netdutils/Syscalls.h>
 #include "BandwidthController.h"
+#include <android-base/properties.h>
+
 #include "Controllers.h"
 #include "FirewallController.h" /* For makeCriticalCommands */
 #include "Fwmark.h"
@@ -203,6 +205,7 @@ static const uint32_t uidBillingMask = Fwmark::getUidBillingMask();
  */
 
 std::vector<std::string> getBasicAccountingCommands() {
+    const bool useBpf = android::base::GetBoolProperty("ro.kernel.ebpf.supported", true);
     // clang-format off
     std::vector<std::string> ipt_basic_accounting_commands = {
             "*filter",
@@ -212,14 +215,21 @@ std::vector<std::string> getBasicAccountingCommands() {
             "-A bw_INPUT -p esp -j RETURN",
             StringPrintf("-A bw_INPUT -m mark --mark 0x%x/0x%x -j RETURN", uidBillingMask,
                          uidBillingMask),
+            useBpf ? "" : "-A bw_INPUT -m owner --socket-exists",
             StringPrintf("-A bw_INPUT -j MARK --or-mark 0x%x", uidBillingMask),
             "-A bw_OUTPUT -j bw_global_alert",
+            useBpf ? "" : "-A bw_OUTPUT -o " IPSEC_IFACE_PREFIX "+ -j RETURN",
+            useBpf ? "" : "-A bw_OUTPUT -m policy --pol ipsec --dir out -j RETURN",
+            // Do not account CLAT's translated socket here; it is accounted on the stacked
+            // interface using the originating UID.
+            useBpf ? "" : "-A bw_OUTPUT -m owner --uid-owner clat -j RETURN",
+            useBpf ? "" : "-A bw_OUTPUT -m owner --socket-exists",
             "-A bw_costly_shared -j bw_penalty_box",
-            ("-I bw_penalty_box -m bpf --object-pinned " XT_BPF_DENYLIST_PROG_PATH " -j REJECT"),
+            useBpf ? ("-I bw_penalty_box -m bpf --object-pinned " XT_BPF_DENYLIST_PROG_PATH " -j REJECT") : "",
             "-A bw_penalty_box -j bw_happy_box",
             "-A bw_happy_box -j bw_data_saver",
             "-A bw_data_saver -j RETURN",
-            ("-I bw_happy_box -m bpf --object-pinned " XT_BPF_ALLOWLIST_PROG_PATH " -j RETURN"),
+            useBpf ? ("-I bw_happy_box -m bpf --object-pinned " XT_BPF_ALLOWLIST_PROG_PATH " -j RETURN") : "",
             "COMMIT",
 
             "*raw",
@@ -238,7 +248,8 @@ std::vector<std::string> getBasicAccountingCommands() {
             //
             // Hence we will never double count and additional corrections are not needed.
             // We can simply take the sum of base and stacked (+20B/pkt) interface counts.
-            ("-A bw_raw_PREROUTING -m bpf --object-pinned " XT_BPF_INGRESS_PROG_PATH),
+            useBpf ? ("-A bw_raw_PREROUTING -m bpf --object-pinned " XT_BPF_INGRESS_PROG_PATH)
+                   : "-A bw_raw_PREROUTING -m owner --socket-exists",
             "COMMIT",
 
             "*mangle",
@@ -248,10 +259,13 @@ std::vector<std::string> getBasicAccountingCommands() {
             "-A bw_mangle_POSTROUTING -m policy --pol ipsec --dir out -j RETURN",
             // Clear the uid billing done (egress) mark before sending this packet
             StringPrintf("-A bw_mangle_POSTROUTING -j MARK --set-mark 0x0/0x%x", uidBillingMask),
+            // CLAT traffic is already accounted on its stacked interface.
+            useBpf ? "" : "-A bw_mangle_POSTROUTING -m owner --uid-owner clat -j RETURN",
+            useBpf ? "" : "-A bw_mangle_POSTROUTING -m owner --socket-exists",
             // This is egress interface accounting: we account 464xlat traffic only on
             // the clat interface (as offloaded packets never hit base interface's ip6tables)
             // and later sum base and stacked with overhead (+20B/pkt) in higher layers
-            ("-A bw_mangle_POSTROUTING -m bpf --object-pinned " XT_BPF_EGRESS_PROG_PATH),
+            useBpf ? ("-A bw_mangle_POSTROUTING -m bpf --object-pinned " XT_BPF_EGRESS_PROG_PATH) : "",
             COMMIT_AND_CLOSE};
     // clang-format on
     return ipt_basic_accounting_commands;
