@@ -96,6 +96,8 @@ public:
 
     int setCostlyAlert(const std::string& costName, int64_t bytes, int64_t* alertBytes);
     int removeCostlyAlert(const std::string& costName, int64_t* alertBytes);
+    int manipulateSpecialApps(const std::vector<uint32_t>& appUids, const char* chain,
+                              const char* target, IptOp op, std::set<uint32_t>* current);
 
     /*
      * Attempt to find the bw_costly_* tables that need flushing,
@@ -128,6 +130,8 @@ public:
 
     std::map<std::string, QuotaInfo> mQuotaIfaces;
     std::set<std::string> mSharedQuotaIfaces;
+    std::set<uint32_t> mNaughtyApps;
+    std::set<uint32_t> mNiceApps;
 };
 
 #endif

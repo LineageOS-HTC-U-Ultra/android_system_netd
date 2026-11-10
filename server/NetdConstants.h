@@ -91,7 +91,12 @@ enum ChildChain {
     STANDBY = INetd::FIREWALL_CHAIN_STANDBY,
     POWERSAVE = INetd::FIREWALL_CHAIN_POWERSAVE,
     RESTRICTED = INetd::FIREWALL_CHAIN_RESTRICTED,
-    INVALID_CHAIN
+    LOW_POWER_STANDBY = 5,
+    BACKGROUND = 6,
+    OEM_DENY_1 = 7,
+    OEM_DENY_2 = 8,
+    OEM_DENY_3 = 9,
+    INVALID_CHAIN = 10,
 };
 
 }  // namespace android::net

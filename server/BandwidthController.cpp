@@ -227,6 +227,8 @@ std::vector<std::string> getBasicAccountingCommands() {
             "-A bw_costly_shared -j bw_penalty_box",
             useBpf ? ("-I bw_penalty_box -m bpf --object-pinned " XT_BPF_DENYLIST_PROG_PATH " -j REJECT") : "",
             "-A bw_penalty_box -j bw_happy_box",
+            useBpf ? "" : StringPrintf("-I bw_happy_box -m owner --uid-owner 0-%u -j RETURN",
+                                         static_cast<unsigned int>(AID_APP - 1)),
             "-A bw_happy_box -j bw_data_saver",
             "-A bw_data_saver -j RETURN",
             useBpf ? ("-I bw_happy_box -m bpf --object-pinned " XT_BPF_ALLOWLIST_PROG_PATH " -j RETURN") : "",
@@ -328,6 +330,50 @@ int BandwidthController::enableDataSaver(bool enable) {
     int ret = iptablesRestoreFunction(V4, makeDataSaverCommand(V4, enable), nullptr);
     ret |= iptablesRestoreFunction(V6, makeDataSaverCommand(V6, enable), nullptr);
     return ret;
+}
+
+int BandwidthController::manipulateSpecialApps(const std::vector<uint32_t>& appUids,
+                                               const char* chain, const char* target, IptOp op,
+                                               std::set<uint32_t>* current) {
+    std::vector<uint32_t> changed;
+    for (const auto uid : appUids) {
+        if (op == IptOpInsert && current->insert(uid).second) changed.push_back(uid);
+        if (op == IptOpDelete && current->erase(uid) != 0) changed.push_back(uid);
+    }
+    if (changed.empty()) return 0;
+
+    std::string command = "*filter\n";
+    for (const auto uid : changed) {
+        StringAppendF(&command, "%s %s -m owner --uid-owner %u -j %s\n",
+                      op == IptOpInsert ? "-I" : "-D", chain, uid, target);
+    }
+    command.append("COMMIT\n");
+    const int result = iptablesRestoreFunction(V4V6, command, nullptr);
+    if (result != 0) {
+        for (const auto uid : changed) {
+            if (op == IptOpInsert) current->erase(uid);
+            else current->insert(uid);
+        }
+        ALOGE("Failed to update special UID rules in %s", chain);
+        return -EREMOTEIO;
+    }
+    return 0;
+}
+
+int BandwidthController::addNaughtyApps(const std::vector<uint32_t>& uids) {
+    return manipulateSpecialApps(uids, "bw_penalty_box", "REJECT", IptOpInsert, &mNaughtyApps);
+}
+
+int BandwidthController::removeNaughtyApps(const std::vector<uint32_t>& uids) {
+    return manipulateSpecialApps(uids, "bw_penalty_box", "REJECT", IptOpDelete, &mNaughtyApps);
+}
+
+int BandwidthController::addNiceApps(const std::vector<uint32_t>& uids) {
+    return manipulateSpecialApps(uids, "bw_happy_box", "RETURN", IptOpInsert, &mNiceApps);
+}
+
+int BandwidthController::removeNiceApps(const std::vector<uint32_t>& uids) {
+    return manipulateSpecialApps(uids, "bw_happy_box", "RETURN", IptOpDelete, &mNiceApps);
 }
 
 int BandwidthController::setInterfaceSharedQuota(const std::string& iface, int64_t maxBytes) {

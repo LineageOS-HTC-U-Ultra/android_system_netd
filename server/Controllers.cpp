@@ -28,6 +28,7 @@
 
 #include "ConnmarkFlags.h"
 #include "Controllers.h"
+#include <android-base/properties.h>
 #include "IdletimerController.h"
 #include "NetworkController.h"
 #include "RouteController.h"
@@ -321,7 +322,7 @@ void Controllers::init() {
         // As such simply exit netd.  This may crash loop the system, but by failing
         // to bootup we will trigger rollback and thus this offers us protection against
         // a mainline update breaking things.
-        exit(1);
+        if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) exit(1);
     }
     gLog.info("Enabling bandwidth control: %" PRId64 "us", s.getTimeAndResetUs());
 

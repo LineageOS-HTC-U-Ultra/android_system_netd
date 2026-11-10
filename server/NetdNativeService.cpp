@@ -24,6 +24,7 @@
 #include <vector>
 
 #include <android-base/file.h>
+#include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <binder/IPCThreadState.h>
@@ -208,9 +209,15 @@ binder::Status NetdNativeService::isAlive(bool *alive) {
     return binder::Status::ok();
 }
 
-binder::Status NetdNativeService::firewallReplaceUidChain(const std::string&, bool,
-                                                          const std::vector<int32_t>&, bool*) {
-    DEPRECATED;
+binder::Status NetdNativeService::firewallReplaceUidChain(const std::string& chainName,
+                                                          bool isAllowlist,
+                                                          const std::vector<int32_t>& uids,
+                                                          bool* ret) {
+    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) DEPRECATED;
+    NETD_LOCKING_RPC(gCtls->firewallCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
+    const int error = gCtls->firewallCtrl.replaceUidChain(chainName, isAllowlist, uids);
+    *ret = error == 0;
+    return binder::Status::ok();
 }
 
 binder::Status NetdNativeService::bandwidthEnableDataSaver(bool enable, bool *ret) {
@@ -252,20 +259,32 @@ binder::Status NetdNativeService::bandwidthSetGlobalAlert(int64_t bytes) {
     return statusFromErrcode(res);
 }
 
-binder::Status NetdNativeService::bandwidthAddNaughtyApp(int32_t) {
-    DEPRECATED;
+binder::Status NetdNativeService::bandwidthAddNaughtyApp(int32_t uid) {
+    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) DEPRECATED;
+    if (uid < 0) return statusFromErrcode(-EINVAL);
+    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
+    return statusFromErrcode(gCtls->bandwidthCtrl.addNaughtyApps({static_cast<uint32_t>(uid)}));
 }
 
-binder::Status NetdNativeService::bandwidthRemoveNaughtyApp(int32_t) {
-    DEPRECATED;
+binder::Status NetdNativeService::bandwidthRemoveNaughtyApp(int32_t uid) {
+    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) DEPRECATED;
+    if (uid < 0) return statusFromErrcode(-EINVAL);
+    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
+    return statusFromErrcode(gCtls->bandwidthCtrl.removeNaughtyApps({static_cast<uint32_t>(uid)}));
 }
 
-binder::Status NetdNativeService::bandwidthAddNiceApp(int32_t) {
-    DEPRECATED;
+binder::Status NetdNativeService::bandwidthAddNiceApp(int32_t uid) {
+    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) DEPRECATED;
+    if (uid < 0) return statusFromErrcode(-EINVAL);
+    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
+    return statusFromErrcode(gCtls->bandwidthCtrl.addNiceApps({static_cast<uint32_t>(uid)}));
 }
 
-binder::Status NetdNativeService::bandwidthRemoveNiceApp(int32_t) {
-    DEPRECATED;
+binder::Status NetdNativeService::bandwidthRemoveNiceApp(int32_t uid) {
+    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) DEPRECATED;
+    if (uid < 0) return statusFromErrcode(-EINVAL);
+    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
+    return statusFromErrcode(gCtls->bandwidthCtrl.removeNiceApps({static_cast<uint32_t>(uid)}));
 }
 
 // TODO: Remove this function when there are no users. Currently, it is still used by DNS resolver
@@ -1129,12 +1148,19 @@ binder::Status NetdNativeService::firewallSetInterfaceRule(const std::string& if
     return statusFromErrcode(res);
 }
 
-binder::Status NetdNativeService::firewallSetUidRule(int32_t, int32_t, int32_t) {
-    DEPRECATED;
+binder::Status NetdNativeService::firewallSetUidRule(int32_t childChain, int32_t uid,
+                                                    int32_t firewallRule) {
+    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) DEPRECATED;
+    NETD_LOCKING_RPC(gCtls->firewallCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
+    return statusFromErrcode(gCtls->firewallCtrl.setUidRule(
+            static_cast<ChildChain>(childChain), uid, static_cast<FirewallRule>(firewallRule)));
 }
 
-binder::Status NetdNativeService::firewallEnableChildChain(int32_t, bool) {
-    DEPRECATED;
+binder::Status NetdNativeService::firewallEnableChildChain(int32_t childChain, bool enable) {
+    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) DEPRECATED;
+    NETD_LOCKING_RPC(gCtls->firewallCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
+    return statusFromErrcode(gCtls->firewallCtrl.enableChildChains(
+            static_cast<ChildChain>(childChain), enable));
 }
 
 binder::Status NetdNativeService::firewallAddUidInterfaceRules(const std::string&,

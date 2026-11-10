@@ -18,6 +18,7 @@
 #define _FIREWALL_CONTROLLER_H
 
 #include <sys/types.h>
+#include <map>
 #include <mutex>
 #include <set>
 #include <string>
@@ -50,6 +51,8 @@ public:
   int setInterfaceRule(const char*, FirewallRule);
   /* Match traffic owned by given UID. This is specific to a particular chain. */
   int setUidRule(ChildChain, int, FirewallRule);
+  int enableChildChains(ChildChain, bool);
+  int replaceUidChain(const std::string&, bool, const std::vector<int32_t>&);
 
   static std::string makeCriticalCommands(IptablesTarget target, const char* chainName);
 
@@ -71,6 +74,13 @@ private:
   FirewallType mFirewallType;
   std::set<std::string> mIfaceRules;
   int flushRules(void);
+  std::set<ChildChain> mEnabledChains;
+  std::map<ChildChain, std::set<int32_t>> mUidRules;
+  FirewallType getFirewallType(ChildChain) const;
+  static const char* getChainName(ChildChain);
+  static bool isSupportedChainName(const std::string&, ChildChain*);
+  std::string makeUidRules(IptablesTarget, const char*, bool,
+                           const std::vector<int32_t>&) const;
 };
 
 }  // namespace net

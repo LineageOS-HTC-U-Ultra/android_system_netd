@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 #include <stdio.h>
+#include <errno.h>
 
 #include <gtest/gtest.h>
 
@@ -107,6 +108,22 @@ TEST_F(FirewallControllerTest, TestFirewall) {
     // nothing. This seems like a clear bug.
     EXPECT_EQ(0, mFw.setFirewallType(ALLOWLIST));
     expectIptablesRestoreCommands(noCommands);
+}
+
+TEST_F(FirewallControllerTest, ReplaceUidChainIgnoresInvalidUid) {
+    EXPECT_EQ(0, mFw.replaceUidChain("fw_restricted", true, {-1, 10001}));
+
+    ASSERT_EQ(2U, sRestoreCmds.size());
+    for (const auto& command : sRestoreCmds) {
+        EXPECT_NE(std::string::npos, command.second.find("--uid-owner 10001"));
+        EXPECT_EQ(std::string::npos, command.second.find("--uid-owner -1"));
+    }
+    sRestoreCmds.clear();
+}
+
+TEST_F(FirewallControllerTest, SetUidRuleRejectsInvalidUid) {
+    EXPECT_EQ(-EINVAL, mFw.setUidRule(RESTRICTED, -1, ALLOW));
+    expectIptablesRestoreCommands(std::vector<std::string>{});
 }
 
 }  // namespace net
